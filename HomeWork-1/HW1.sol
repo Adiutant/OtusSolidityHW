@@ -16,6 +16,12 @@ interface INativeBank {
     error WithdrawalAmountExceedsBalance(address account, uint256 amount, uint256 balance);
 
     /**
+     * @dev Генерируется, когда сумма снятия равна нулю.
+     * @param account Адрес аккаунта, который пытался снять средства.
+     */
+    error WithdrawalZeroAmount(address account);
+
+    /**
      * @dev Генерируется, когда на счёт аккаунта поступает депозит.
      * @param account Адрес аккаунта, на который был сделан депозит.
      * @param amount Сумма, которая была внесена.
@@ -48,28 +54,32 @@ interface INativeBank {
 
 contract Bank is INativeBank {
 
+    mapping (address => uint256) public balanceOf;
 
-    mapping (address => uint256) private _balances;
-    receive() external payable { }
 
     function withdraw(uint256 amount) external override {
-        if (amount > _balances[msg.sender]) {
-            revert WithdrawalAmountExceedsBalance(msg.sender, amount, _balances[msg.sender]);
+        if (amount == 0) {
+            revert WithdrawalZeroAmount(msg.sender);
+        }
+        if (amount > balanceOf[msg.sender]) {
+            revert WithdrawalAmountExceedsBalance(msg.sender, amount, balanceOf[msg.sender]);
         }
         (bool sent, ) = payable(msg.sender).call{value: amount}("");
         require(sent, "Error in deposit");
-        _balances[msg.sender] -= amount;
+        unchecked {
+            balanceOf[msg.sender] -= amount;
+        }
         emit Withdrawal(msg.sender, amount);
     }
 
+    function _deposit(address sender, uint256 value) private {
+        balanceOf[sender] += value;
+        emit Deposit(sender, value);
+    } 
     function deposit() external payable override {
-        (bool sent, ) = address(this).call{value: msg.value}("");
-        require(sent, "Error in deposit");
-        _balances[msg.sender] += msg.value;
-        emit Deposit(msg.sender, msg.value);
+        _deposit(msg.sender, msg.value);
     }
 
-    function balanceOf(address account) external override  view returns(uint256) {
-        return _balances[account];
-    }
+    receive() external payable {  _deposit(msg.sender, msg.value); }
+
 }
